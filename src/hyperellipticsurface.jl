@@ -599,7 +599,8 @@ function (BA::BakerAkhiezerFunction)(x,t,tol = BA.tol; directsolve = false, getm
     f2x = [WeightFun(solx[m + j],RHP[j].W)  for j = 1:m ]
 
     Φ = (z,o) -> [Cauchy(f1,z,o) + 1.0, Cauchy(f2,z,o) + 1.0] |> transpose
-    (Φ,f1,f2,f1x,f2x,BA.E)
+	Φx = (z,o) -> [Cauchy(f1x,z,o), Cauchy(f2x,z,o)] |> transpose
+    (Φ,Φx,f1,f2,f1x,f2x,BA.E) #might wanna change back eventually
     #(Φ,f1,f2)
 end
 

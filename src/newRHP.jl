@@ -12,7 +12,7 @@ end=#
 J₊(z) = z-√(z-1 |> Complex)*√(z+1 |> Complex) #inverse Joukowsky map
 
 function ChebyVIntExact(z,N::Int,a::Float64,b::Float64)
-    C = zeros(ComplexF64,N+1)
+    C = zeros(ComplexF64,1,N+1)
     C[1] = (im/2π)*(-1 + sqrt((z-a)/(z-b) |> Complex))*(2/(b-a))
     for k = 1:N
         C[k+1] = C[k]*J₊(iM(a,b)(z))
@@ -21,7 +21,7 @@ function ChebyVIntExact(z,N::Int,a::Float64,b::Float64)
 end
 
 function ChebyWIntExact(z,N::Int,a::Float64,b::Float64)
-    C = zeros(ComplexF64,N+1)
+    C = zeros(ComplexF64,1,N+1)
     C[1] = (im/2π)*(1 - sqrt((z-b)/(z-a) |> Complex))*(2/(b-a))
     for k = 1:N
         C[k+1] = C[k]*J₊(iM(a,b)(z))
@@ -35,7 +35,7 @@ function CauchyIntervalVec(z, a::Float64, b::Float64, kind::Int, N::Int)
     elseif kind == 4
         C = ChebyWIntExact(z,N,a,b)
     end
-transpose(C) |> Array
+C
 end
 
 #=function CauchyIntervalVec(z, X::ChebyParams, N)
@@ -86,7 +86,11 @@ function apply_Cauchy_V(c::Vector,N::Int,aₒ::Float64,bₒ::Float64,aₐ::Float
     jinv = J₊.(iM(aₒ,bₒ).(pts))
     for j = 1:length(c)-1
         ints .*= jinv
-        vals += c[j+1]*ints
+        if maximum(abs.(ints)) < 1e-13
+            break
+        end
+        #vals += c[j+1]*ints
+        axpy!(c[j+1],ints,vals)
     end
     vals
 end
@@ -103,7 +107,11 @@ function apply_Cauchy_W(c::Vector,N::Int,aₒ::Float64,bₒ::Float64,aₐ::Float
     jinv = J₊.(iM(aₒ,bₒ).(pts))
     for j = 1:length(c)-1
         ints .*= jinv
-        vals += c[j+1]*ints
+        if maximum(abs.(ints)) < 1e-13
+            break
+        end
+        #vals += c[j+1]*ints
+        axpy!(c[j+1],ints,vals)
     end
     vals
 end
@@ -120,23 +128,21 @@ end
 w_V(x) = sqrt(x+1 |> Complex)/(pi*sqrt(1-x |> Complex))
 w_W(x) = sqrt(1-x |> Complex)/(pi*sqrt(x+1 |> Complex))
 
-function apply_inv_plus_V(A::Vector,a::Float64,b::Float64)
-    weightvec = w_V.(Ugrid(size(A,1)))*2/(b-a)
-    A = diagm(1 ./weightvec)*A
-    B = vals_to_coeffs_V(A)#./weightvec
+function apply_inv_plus_V(x::Vector,a::Float64,b::Float64)
+    weightvec = w_V.(Ugrid(length(x)))*2/(b-a)
+    vals_to_coeffs_V(x./weightvec)
 end
 
-function apply_inv_plus_W(A::Vector,a::Float64,b::Float64)
-    weightvec = w_W.(Ugrid(size(A,1)))*2/(b-a)
-    A = diagm(1 ./weightvec)*A
-    B = vals_to_coeffs_W(A)
+function apply_inv_plus_W(x::Vector,a::Float64,b::Float64)
+    weightvec = w_W.(Ugrid(length(x)))*2/(b-a)
+    vals_to_coeffs_W(x./weightvec)
 end
 
-function apply_inv_plus(A::Vector,a::Float64,b::Float64,kind::Int)
+function apply_inv_plus(x::Vector,a::Float64,b::Float64,kind::Int)
     if kind == 3
-        v = apply_inv_plus_V(A,a,b)
+        v = apply_inv_plus_V(x,a,b)
     elseif kind == 4
-        v = apply_inv_plus_W(A,a,b)
+        v = apply_inv_plus_W(x,a,b)
     end
     v
 end
@@ -166,15 +172,16 @@ function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::
     
     function A_map(x) #applies preconditioned and diagonalized operator
         v = copy(x)
-        for j = 1:g+1
+        @inbounds for j = 1:g+1
+            vadd = zeros(ComplexF64,nvec[j])
             for k = (1:g+1)[1:end .!= j,:]
-                x1 = x[2nsum(k)+1:2nsum(k)+nvec[k]]
-                x2 = x[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]]
-                
-                vadd = K(exp(Ωs[j]),exp(Ωs[k]))[1]*apply_inv(apply_Cauchy(x1,nvec[j],bands[k,1],bands[k,2],bands[j,1],bands[j,2],typevec[k]),bands[j,1],bands[j,2],typevec[j])
-                vadd += K(exp(Ωs[j]),exp(Ωs[k]))[2]*apply_inv(apply_Cauchy(x2,nvec[j],bands[k,1],bands[k,2],bands[j,1],bands[j,2],typevec[k]),bands[j,1],bands[j,2],typevec[j])
-                v[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]] += vadd
+                #x1 = x[2nsum(k)+1:2nsum(k)+nvec[k]]
+                #x2 = x[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]]
+
+                axpy!(K(exp(Ωs[j]),exp(Ωs[k]))[1],apply_inv(apply_Cauchy(x[2nsum(k)+1:2nsum(k)+nvec[k]],nvec[j],bands[k,1],bands[k,2],bands[j,1],bands[j,2],typevec[k]),bands[j,1],bands[j,2],typevec[j]),vadd)
+                axpy!(K(exp(Ωs[j]),exp(Ωs[k]))[2],apply_inv(apply_Cauchy(x[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]],nvec[j],bands[k,1],bands[k,2],bands[j,1],bands[j,2],typevec[k]),bands[j,1],bands[j,2],typevec[j]),vadd)
             end
+            v[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]] += vadd
         end
         v
     end
@@ -182,7 +189,7 @@ function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::
     At = LinearMap(A_map, 2*sum(nvec); issymmetric=false, ismutating=false)
     #preconditoned and diagonalized RHS can be computed explicitly
     rhs = zeros(ComplexF64, 2*sum(nvec))
-    for j = 1:g+1
+    @inbounds for j = 1:g+1
         if typevec[j] == 3
             rhs[2nsum(j)+nvec[j]+1] = (exp(Ωs[j])-1)*π*im*(bands[j,2]-bands[j,1])/√2
         elseif typevec[j] == 4
@@ -191,34 +198,45 @@ function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::
     end
     
     sol = gmres(At,rhs; reltol=1e-12)
-    for j = 1:g+1 #undo diagonalization
-        sol[2nsum(j)+1:2nsum(j)+2nvec[j]] = kron(U(exp(Ωs[j]))[:,1],sol[2nsum(j)+1:2nsum(j)+nvec[j]])+kron(U(exp(Ωs[j]))[:,2],sol[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]])
+    @inbounds for j = 1:g+1 #undo diagonalization
+        x1 = sol[2nsum(j)+1:2nsum(j)+nvec[j]]
+        x2 = sol[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]]
+        sol[2nsum(j)+1:2nsum(j)+2nvec[j]] = kron(U(exp(Ωs[j]))[:,1],x1)+kron(U(exp(Ωs[j]))[:,2],x2)
     end
     ϕ(z,c) = rhsol(bands,sol,nvec,typevec)(z,c) + [1 1]
     
     # build derivative RHS
     rhsx = zeros(ComplexF64,2*nsum(g+2))
-    for j = 1:g+1
+    @inbounds for j = 1:g+1
+        J1, J2 = -Ωsx[j]*exp(-Ωs[j]), Ωsx[j]*exp(Ωs[j])
+        x1 = zeros(ComplexF64,nvec[j])
+        x2 = zeros(ComplexF64,nvec[j])
         # compute -Aₓ*sol
         for k = 1:g+1
-            rhsx[2nsum(j)+1:2nsum(j)+nvec[j]] += J(Ωs[j],Ωsx[j])[2,1]*apply_Cauchy(sol[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]],nvec[j],bands[k,1],bands[k,2],bands[j,1],bands[j,2],typevec[k]; flag = -1)
-            rhsx[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]] += J(Ωs[j],Ωsx[j])[1,2]*apply_Cauchy(sol[2nsum(k)+1:2nsum(k)+nvec[k]],nvec[j],bands[k,1],bands[k,2],bands[j,1],bands[j,2],typevec[k]; flag = -1) 
+            #x1 += J1*apply_Cauchy(sol[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]],nvec[j],bands[k,1],bands[k,2],bands[j,1],bands[j,2],typevec[k]; flag = -1)
+            axpy!(J1,apply_Cauchy(sol[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]],nvec[j],bands[k,1],bands[k,2],bands[j,1],bands[j,2],typevec[k]; flag = -1), x1)
+            #x2 += J2*apply_Cauchy(sol[2nsum(k)+1:2nsum(k)+nvec[k]],nvec[j],bands[k,1],bands[k,2],bands[j,1],bands[j,2],typevec[k]; flag = -1) 
+            axpy!(J2,apply_Cauchy(sol[2nsum(k)+1:2nsum(k)+nvec[k]],nvec[j],bands[k,1],bands[k,2],bands[j,1],bands[j,2],typevec[k]; flag = -1), x2)
         end
         
         # add derivative of RHS
-        rhsx[2nsum(j)+1:2nsum(j)+nvec[j]] .+= -Ωsx[j]*exp(-Ωs[j])
-        rhsx[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]] .+= Ωsx[j]*exp(Ωs[j]) 
+        x1 .+= J1
+        x2 .+= J2
     
         # apply diagonalization
-        rhsx[2nsum(j)+1:2nsum(j)+2nvec[j]] = kron(U(exp(Ωs[j]))'[:,1],rhsx[2nsum(j)+1:2nsum(j)+nvec[j]])+kron(U(exp(Ωs[j]))'[:,2],rhsx[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]])
+        #xx = kron(U(exp(Ωs[j]))'[:,1],x1)+kron(U(exp(Ωs[j]))'[:,2],x2)
+        v1 = U(exp(Ωs[j]))'[1,1]*x1+U(exp(Ωs[j]))'[1,2]*x2
+        v2 = U(exp(Ωs[j]))'[2,1]*x1+U(exp(Ωs[j]))'[2,2]*x2
         
         #apply preconditioner
-        rhsx[2nsum(j)+1:2nsum(j)+2nvec[j]] = [apply_inv_plus(rhsx[2nsum(j)+1:2nsum(j)+nvec[j]],bands[j,1],bands[j,2],typevec[j]); apply_inv(rhsx[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]],bands[j,1],bands[j,2],typevec[j])]
+        rhsx[2nsum(j)+1:2nsum(j)+2nvec[j]] = [apply_inv_plus(v1,bands[j,1],bands[j,2],typevec[j]); apply_inv(v2,bands[j,1],bands[j,2],typevec[j])]
     end
     
     solx = gmres(At,rhsx; reltol=1e-12)
-    for j = 1:g+1
-        solx[2nsum(j)+1:2nsum(j)+2nvec[j]] = kron(U(exp(Ωs[j]))[:,1],solx[2nsum(j)+1:2nsum(j)+nvec[j]])+kron(U(exp(Ωs[j]))[:,2],solx[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]])
+    @inbounds for j = 1:g+1
+        x1 = solx[2nsum(j)+1:2nsum(j)+nvec[j]]
+        x2 = solx[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]]
+        solx[2nsum(j)+1:2nsum(j)+2nvec[j]] = kron(U(exp(Ωs[j]))[:,1],x1)+kron(U(exp(Ωs[j]))[:,2],x2)
     end
     ϕx(z,c) = rhsol(bands,solx,nvec,typevec)(z,c)
     

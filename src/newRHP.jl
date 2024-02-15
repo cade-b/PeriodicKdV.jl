@@ -51,76 +51,74 @@ end
 transpose(C) |> Array
 end=#
 
-function vals_to_coeffs_V(v::Vector)
+function vals_to_coeffs_V(v::Vector,F::FFTW.r2rFFTWPlan)
     N = length(v)
     v .*= cos.(((1:N).-1/2)*pi/(2N))
-    coeffs = FFTW.r2r(v,FFTW.REDFT11)/N
-    coeffs
+    coeffs = F*v/N#FFTW.r2r(v,FFTW.REDFT11)/N
+    #coeffs
 end
 
-function vals_to_coeffs_W(v::Vector)
+function vals_to_coeffs_W(v::Vector,F::FFTW.r2rFFTWPlan)
     N = length(v)
     v .*= sin.(((1:N).-1/2)*pi/(2N))
-    coeffs = FFTW.r2r(v,FFTW.RODFT11)/N
-    coeffs
+    coeffs = F*v/N#FFTW.r2r(v,FFTW.RODFT11)/N
+    #coeffs
 end
 
-function apply_inv(x::Vector, a::Float64, b::Float64, kind::Int)
+function apply_inv(x::Vector, a::Float64, b::Float64, kind::Int, Fv::Array{FFTW.r2rFFTWPlan})
     if kind == 3
-        v = -vals_to_coeffs_W(x)*(pi/im)*(b-a)/2
+        v = -vals_to_coeffs_W(x,Fv[2])*(pi/im)*(b-a)/2
     elseif kind == 4
-        v = vals_to_coeffs_V(x)*(pi/im)*(b-a)/2
+        v = vals_to_coeffs_V(x,Fv[1])*(pi/im)*(b-a)/2
     end
     v
 end
 
-function apply_Cauchy_V(c::Vector,N::Int,aₒ::Float64,bₒ::Float64,aₐ::Float64,bₐ::Float64; flag=0)
-    pts = M(aₐ,bₐ).(Ugrid(N)) .|> Complex
+function apply_Cauchy_V(c::Vector,N::Int,aₒ::Float64,bₒ::Float64,pts::Vector{ComplexF64}; flag=0)
     if flag == 1
         pts .+= eps*im
     elseif flag == -1
         pts .-= eps*im
     end
-    ints = @. (im/2π)*(-1 + sqrt((pts-aₒ)/(pts-bₒ) |> Complex))*(2/(bₒ-aₒ))
+    ints = @. (im/2π)*(-1 + sqrt((pts-aₒ)/(pts-bₒ)))*(2/(bₒ-aₒ))
     vals = c[1]*ints
     jinv = J₊.(iM(aₒ,bₒ).(pts))
-    for j = 1:length(c)-1
+    for j = 1:N-1
         ints .*= jinv
-        if maximum(abs.(ints)) < 1e-13
+        #=if maximum(abs.(ints)) < 1e-13
             break
-        end
+        end=#
         #vals += c[j+1]*ints
         axpy!(c[j+1],ints,vals)
     end
     vals
 end
 
-function apply_Cauchy_W(c::Vector,N::Int,aₒ::Float64,bₒ::Float64,aₐ::Float64,bₐ::Float64; flag=0)
-    pts = M(aₐ,bₐ).(Ugrid(N)) .|> Complex
+function apply_Cauchy_W(c::Vector,N::Int,aₒ::Float64,bₒ::Float64,pts::Vector{ComplexF64}; flag=0)
     if flag == 1
         pts .+= eps*im
     elseif flag == -1
         pts .-= eps*im
     end
-    ints = @. (im/2π)*(1 - sqrt((pts-bₒ)/(pts-aₒ) |> Complex))*(2/(bₒ-aₒ))
+    ints = @. (im/2π)*(1 - sqrt((pts-bₒ)/(pts-aₒ)))*(2/(bₒ-aₒ))
     vals = c[1]*ints
     jinv = J₊.(iM(aₒ,bₒ).(pts))
-    for j = 1:length(c)-1
+    for j = 1:N-1
         ints .*= jinv
-        if maximum(abs.(ints)) < 1e-13
+        #=if maximum(abs.(ints)) < 1e-13
             break
-        end
+        end=#
         #vals += c[j+1]*ints
         axpy!(c[j+1],ints,vals)
     end
     vals
 end
 
-function apply_Cauchy(c::Vector,N::Int,aₒ::Float64,bₒ::Float64,aₐ::Float64,bₐ::Float64,kind::Int; flag = 0)
+function apply_Cauchy(c::Vector,N::Int,aₒ::Float64,bₒ::Float64,pts::Vector{ComplexF64},kind::Int; flag = 0)
     if kind == 3
-        v = apply_Cauchy_V(c,N,aₒ,bₒ,aₐ,bₐ; flag=flag)
+        v = apply_Cauchy_V(c,N,aₒ,bₒ,pts; flag=flag)
     elseif kind == 4
-        v = apply_Cauchy_W(c,N,aₒ,bₒ,aₐ,bₐ; flag=flag)
+        v = apply_Cauchy_W(c,N,aₒ,bₒ,pts; flag=flag)
     end
     v
 end
@@ -128,21 +126,21 @@ end
 w_V(x) = sqrt(x+1 |> Complex)/(pi*sqrt(1-x |> Complex))
 w_W(x) = sqrt(1-x |> Complex)/(pi*sqrt(x+1 |> Complex))
 
-function apply_inv_plus_V(x::Vector,a::Float64,b::Float64)
+function apply_inv_plus_V(x::Vector,a::Float64,b::Float64,F::FFTW.r2rFFTWPlan)
     weightvec = w_V.(Ugrid(length(x)))*2/(b-a)
-    vals_to_coeffs_V(x./weightvec)
+    vals_to_coeffs_V(x./weightvec,F)
 end
 
-function apply_inv_plus_W(x::Vector,a::Float64,b::Float64)
+function apply_inv_plus_W(x::Vector,a::Float64,b::Float64,F::FFTW.r2rFFTWPlan)
     weightvec = w_W.(Ugrid(length(x)))*2/(b-a)
-    vals_to_coeffs_W(x./weightvec)
+    vals_to_coeffs_W(x./weightvec,F)
 end
 
-function apply_inv_plus(x::Vector,a::Float64,b::Float64,kind::Int)
+function apply_inv_plus(x::Vector,a::Float64,b::Float64,kind::Int, Fv::Array{FFTW.r2rFFTWPlan})
     if kind == 3
-        v = apply_inv_plus_V(x,a,b)
+        v = apply_inv_plus_V(x,a,b,Fv[1])
     elseif kind == 4
-        v = apply_inv_plus_W(x,a,b)
+        v = apply_inv_plus_W(x,a,b,Fv[2])
     end
     v
 end
@@ -158,16 +156,26 @@ U(x) = [1/(x*√2) -1/(x*√2); 1/√2 1/√2]
 K(α,β) = (2*U(α)'*U(β))[2,:]
 J(θ,θx) = [0 θx*exp(θ); -θx*exp(-θ) 0]
 
-function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::Vector{ComplexF64}; nvec = Nothing, typevec = Nothing)
+function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::Vector{ComplexF64}; nmat = Nothing, typevec = Nothing)
     g = size(bands,1)-1
-    if nvec == Nothing
-        nvec = 20*ones(Int,g+1)
+    if nmat == Nothing
+        nmat = 20*ones(Int,g+1,g+1)
     end
+    nvec = vec(maximum(nmat, dims = 2))
+    #nvec = @. 2^(ceil(log(2,nvec))) |> Int #require multiples of 2 for faster FFT
     nsum(j) = sum(nvec[1:j-1])
     
     if typevec == Nothing
         gg = (g+1)/2 |> Int
         typevec = [4*ones(Int,gg); 3*ones(Int,gg)]
+    end
+
+    gridmat = Array{Vector{ComplexF64}}(undef,g+1) #store collocation points
+    fftmat = Array{FFTW.r2rFFTWPlan}(undef,g+1,2)
+    for j = 1:g+1
+        gridmat[j] = M(bands[j,1],bands[j,2]).(Ugrid(nvec[j])) .|> Complex
+        fftmat[j,1] = FFTW.plan_r2r(zeros(ComplexF64,nvec[j]),FFTW.REDFT11)
+        fftmat[j,2] = FFTW.plan_r2r(zeros(ComplexF64,nvec[j]),FFTW.RODFT11)
     end
     
     function A_map(x) #applies preconditioned and diagonalized operator
@@ -178,8 +186,8 @@ function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::
                 #x1 = x[2nsum(k)+1:2nsum(k)+nvec[k]]
                 #x2 = x[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]]
 
-                axpy!(K(exp(Ωs[j]),exp(Ωs[k]))[1],apply_inv(apply_Cauchy(x[2nsum(k)+1:2nsum(k)+nvec[k]],nvec[j],bands[k,1],bands[k,2],bands[j,1],bands[j,2],typevec[k]),bands[j,1],bands[j,2],typevec[j]),vadd)
-                axpy!(K(exp(Ωs[j]),exp(Ωs[k]))[2],apply_inv(apply_Cauchy(x[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]],nvec[j],bands[k,1],bands[k,2],bands[j,1],bands[j,2],typevec[k]),bands[j,1],bands[j,2],typevec[j]),vadd)
+                axpy!(K(exp(Ωs[j]),exp(Ωs[k]))[1],apply_inv(apply_Cauchy(x[2nsum(k)+1:2nsum(k)+nvec[k]],nmat[k,j],bands[k,1],bands[k,2],gridmat[j],typevec[k]),bands[j,1],bands[j,2],typevec[j],fftmat[j,:]),vadd)
+                axpy!(K(exp(Ωs[j]),exp(Ωs[k]))[2],apply_inv(apply_Cauchy(x[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]],nmat[k,j],bands[k,1],bands[k,2],gridmat[j],typevec[k]),bands[j,1],bands[j,2],typevec[j],fftmat[j,:]),vadd)
             end
             v[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]] += vadd
         end
@@ -214,9 +222,9 @@ function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::
         # compute -Aₓ*sol
         for k = 1:g+1
             #x1 += J1*apply_Cauchy(sol[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]],nvec[j],bands[k,1],bands[k,2],bands[j,1],bands[j,2],typevec[k]; flag = -1)
-            axpy!(J1,apply_Cauchy(sol[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]],nvec[j],bands[k,1],bands[k,2],bands[j,1],bands[j,2],typevec[k]; flag = -1), x1)
+            axpy!(J1,apply_Cauchy(sol[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]],nmat[k,j],bands[k,1],bands[k,2],gridmat[j],typevec[k]; flag = -1), x1)
             #x2 += J2*apply_Cauchy(sol[2nsum(k)+1:2nsum(k)+nvec[k]],nvec[j],bands[k,1],bands[k,2],bands[j,1],bands[j,2],typevec[k]; flag = -1) 
-            axpy!(J2,apply_Cauchy(sol[2nsum(k)+1:2nsum(k)+nvec[k]],nvec[j],bands[k,1],bands[k,2],bands[j,1],bands[j,2],typevec[k]; flag = -1), x2)
+            axpy!(J2,apply_Cauchy(sol[2nsum(k)+1:2nsum(k)+nvec[k]],nmat[k,j],bands[k,1],bands[k,2],gridmat[j],typevec[k]; flag = -1), x2)
         end
         
         # add derivative of RHS
@@ -229,7 +237,7 @@ function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::
         v2 = U(exp(Ωs[j]))'[2,1]*x1+U(exp(Ωs[j]))'[2,2]*x2
         
         #apply preconditioner
-        rhsx[2nsum(j)+1:2nsum(j)+2nvec[j]] = [apply_inv_plus(v1,bands[j,1],bands[j,2],typevec[j]); apply_inv(v2,bands[j,1],bands[j,2],typevec[j])]
+        rhsx[2nsum(j)+1:2nsum(j)+2nvec[j]] = [apply_inv_plus(v1,bands[j,1],bands[j,2],typevec[j],fftmat[j,:]); apply_inv(v2,bands[j,1],bands[j,2],typevec[j],fftmat[j,:])]
     end
     
     solx = gmres(At,rhsx; reltol=1e-12)
@@ -243,6 +251,9 @@ function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::
     return ϕ,ϕx
 end
 
+gV(a,b) = z -> (1/2π)*(-1 + sqrt((z-a)/(z-b) |> Complex))*(2/(b-a))
+gW(a,b) = z -> (1/2π)*(1 - sqrt((z-b)/(z-a) |> Complex))*(2/(b-a))
+
 function solve_rhp(x, t, BA::BakerAkhiezerFunction)
     g = length(BA.WIp)
     bands = zeros(2g,2)
@@ -254,8 +265,90 @@ function solve_rhp(x, t, BA::BakerAkhiezerFunction)
     Ωs = [-im*reverse(BA.Ω(x,t)); im*BA.Ω(x,t)];
     Ωp = BA.Ω(1.0,0) - BA.Ω(0.0,0)
     Ωsx = [-im*reverse(Ωp); im*Ωp];
-    
-    solve_many_int(bands, Ωs, Ωsx; nvec = BA.ns);
+
+    #this section has a couple issues
+    #=nv = zeros(Int64,2g)
+    for j = 1:2g
+        if j == 1 
+            aa = abs(gW(bands[1,1],bands[1,2])(bands[2,1]))
+            jj = abs(J₊(iM(bands[1,1],bands[1,2])(bands[2,1])))
+            val = ceil(log(1e-14/aa)/log(jj))
+        elseif j < g
+            aa1 = abs(gW(bands[j,1],bands[j,2])(bands[j-1,1]))
+            jj1 = abs(J₊(iM(bands[j,1],bands[j,2])(bands[j-1,2])))
+            aa2 = abs(gW(bands[j,1],bands[j,2])(bands[j+1,1]))
+            jj2 = abs(J₊(iM(bands[j,1],bands[j,2])(bands[j+1,2])))
+            val = ceil(max(log(1e-14/aa1)/log(jj1),log(1e-14/aa2)/log(jj2)))
+        elseif j == g
+            aa1 = abs(gW(bands[j,1],bands[j,2])(bands[j-1,1]))
+            jj1 = abs(J₊(iM(bands[j,1],bands[j,2])(bands[j-1,2])))
+            aa2 = abs(gV(bands[j,1],bands[j,2])(bands[j+1,1]))
+            jj2 = abs(J₊(iM(bands[j,1],bands[j,2])(bands[j+1,2])))
+            val = ceil(max(log(1e-14/aa1)/log(jj1),log(1e-14/aa2)/log(jj2)))
+        elseif j < 2g
+            aa1 = abs(gV(bands[j,1],bands[j,2])(bands[j-1,1]))
+            jj1 = abs(J₊(iM(bands[j,1],bands[j,2])(bands[j-1,2])))
+            aa2 = abs(gV(bands[j,1],bands[j,2])(bands[j+1,1]))
+            jj2 = abs(J₊(iM(bands[j,1],bands[j,2])(bands[j+1,2])))
+            val = ceil(max(log(1e-14/aa1)/log(jj1),log(1e-14/aa2)/log(jj2)))
+        else
+            aa = abs(gV(bands[2g,1],bands[2g,2])(bands[2g-1,1]))
+            jj = abs(J₊(iM(bands[2g,1],bands[2g,2])(bands[2g-1,2])))
+            val = ceil(log(1e-14/aa)/log(jj))
+        end
+
+        if val < 1
+            nv[j] = 1
+        else
+            nv[j] = val |> Int
+        end
+    end=#
+
+    nv = zeros(Int64,2g,2g)
+    for j = 1:g
+        for k = 1:j-1
+            aa = abs(gW(bands[j,1],bands[j,2])(bands[k,2]))
+            jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,2])))
+            val = ceil(log(jj,1e-14/aa)) |> Int
+            if val < 1
+                val = 1
+            end
+            nv[j,k] = val
+        end
+        for k = j+1:2g
+            aa = abs(gW(bands[j,1],bands[j,2])(bands[k,1]))
+            jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,1])))
+            val = ceil(log(jj,1e-14/aa)) |> Int
+            if val < 1
+                val = 1
+            end
+            nv[j,k] = val
+        end
+        nv[j,j] = maximum(nv[j,:])
+    end
+    for j = g+1:2g
+        for k = 1:j-1
+            aa = abs(gV(bands[j,1],bands[j,2])(bands[k,2]))
+            jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,2])))
+            val = ceil(log(jj,1e-14/aa)) |> Int
+            if val < 1
+                val = 1
+            end
+            nv[j,k] = val
+        end
+        for k = j+1:2g
+            aa = abs(gV(bands[j,1],bands[j,2])(bands[k,1]))
+            jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,1])))
+            val = ceil(log(jj,1e-14/aa)) |> Int
+            if val < 1
+                val = 1
+            end
+            nv[j,k] = val
+        end
+        nv[j,j] = maximum(nv[j,:])
+    end
+
+    solve_many_int(bands, Ωs, Ωsx; nmat = nv);
 end
 
 function (rh::rhsol)(z,flag::Int)

@@ -334,6 +334,7 @@ struct BakerAkhiezerFunction
     WIp::Vector{WeightedInterval}
     Ω::Function
     E::Complex{Float64}
+	F::Float64
     α1
     Cp # Compressed Cauchy matrix
     Cm
@@ -419,6 +420,7 @@ end
 function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-14,false],iter = 100,K=0,show_flag=false,choose_points = "adaptive",max_pts = 1000)
     zgaps_neg = hcat(- sqrt.(S.gaps[:,2]) |> reverse, - sqrt.(S.gaps[:,1]) |> reverse)
     zgaps_pos = hcat( sqrt.(S.gaps[:,1]) , sqrt.(S.gaps[:,2]) )
+	F = sum(S.gaps[:,2] - S.gaps[:,1])
     #zzs_pos = sqrt.(zs)
     #zzs_neg = -sqrt.(zs) |> reverse;
     fV = (x,y) -> WeightedInterval(x,y,chebV)
@@ -461,12 +463,13 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
     #println("Maximum rank of Cauchy operator = ", (2*S.g)^2*n )
 
 
-    return BakerAkhiezerFunction(WIm,WIp,Ω,S.E[1],S.α1,CpBO,CmBO,ns,tols[1],iter)
+    return BakerAkhiezerFunction(WIm,WIp,Ω,S.E[1],F,S.α1,CpBO,CmBO,ns,tols[1],iter)
 end
 
 function BakerAkhiezerFunction(S::HyperellipticSurface,c::Array;tols = [2*1e-14,false],iter = 100)
     zgaps_neg = hcat(- sqrt.(S.gaps[:,2]) |> reverse, - sqrt.(S.gaps[:,1]) |> reverse)
     zgaps_pos = hcat( sqrt.(S.gaps[:,1]) , sqrt.(S.gaps[:,2]) )
+	F = sum(S.gaps[:,2] - S.gaps[:,1])
     #zzs_pos = sqrt.(zs)
     #zzs_neg = -sqrt.(zs) |> reverse;
     fV = (x,y) -> WeightedInterval(x,y,chebV)
@@ -487,7 +490,7 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Array;tols = [2*1e-14,
     CmBO = CauchyChop(RHP,RHP,ns,ns,-1,tols[2])
     #println("Effective rank of Cauchy operator = ",effectiverank(CpBO))
     #println("Maximum rank of Cauchy operator = ", (2*S.g)^2*n )
-    return BakerAkhiezerFunction(WIm,WIp,Ω,S.E[1],S.α1,CpBO,CmBO,ns,tols[1],iter)
+    return BakerAkhiezerFunction(WIm,WIp,Ω,S.E[1],F,S.α1,CpBO,CmBO,ns,tols[1],iter)
 end
 
 function (BA::BakerAkhiezerFunction)(x,t,tol = BA.tol; directsolve = false, getmatrices = false)
@@ -606,14 +609,14 @@ end
 
 function KdV(BA::BakerAkhiezerFunction,x,t; directsolve = false)
     out = BA(x+6*BA.α1*t, t; directsolve);
-    1/pi*sum(map(x -> DomainIntegrateVW(x), out[4])) + 2*BA.E - BA.α1
+    1/pi*sum(map(x -> DomainIntegrateVW(x), out[5])) + 2*BA.E - BA.α1 #change index back eventually
     # I think this is right but I cannot justify it, +/- sign issue
     # It must have to do with the jumps and which sheet, etc.
 end
 
 function KdV(BA::BakerAkhiezerFunction,x,t,tol; directsolve = false)
     out = BA(x+6*BA.α1*t, t, tol; directsolve);
-    1/pi*sum(map(x -> DomainIntegrateVW(x), out[4])) + 2*BA.E - BA.α1
+    1/pi*sum(map(x -> DomainIntegrateVW(x), out[5])) + 2*BA.E - BA.α1 #change index back eventually
     # I think this is right but I cannot justify it, +/- sign issue
     # It must have to do with the jumps and which sheet, etc.
 end

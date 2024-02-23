@@ -156,7 +156,7 @@ U(x) = [1/(x*√2) -1/(x*√2); 1/√2 1/√2]
 K(α,β) = (2*U(α)'*U(β))[2,:]
 J(θ,θx) = [0 θx*exp(θ); -θx*exp(-θ) 0]
 
-function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::Vector{ComplexF64}; nmat = Nothing, typevec = Nothing)
+function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::Vector{ComplexF64}; nmat = Nothing, typevec = Nothing, use_deriv = false)
     g = size(bands,1)-1
     if nmat == Nothing
         nmat = 20*ones(Int,g+1,g+1)
@@ -211,7 +211,11 @@ function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::
         x2 = sol[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]]
         sol[2nsum(j)+1:2nsum(j)+2nvec[j]] = kron(U(exp(Ωs[j]))[:,1],x1)+kron(U(exp(Ωs[j]))[:,2],x2)
     end
-    ϕ(z,c) = rhsol(bands,sol,nvec,typevec)(z,c) + [1 1]
+    ϕ = rhsol(bands,sol,nvec,typevec)
+
+    if use_deriv == false
+        return ϕ
+    end
     
     # build derivative RHS
     rhsx = zeros(ComplexF64,2*nsum(g+2))
@@ -246,15 +250,15 @@ function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::
         x2 = solx[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]]
         solx[2nsum(j)+1:2nsum(j)+2nvec[j]] = kron(U(exp(Ωs[j]))[:,1],x1)+kron(U(exp(Ωs[j]))[:,2],x2)
     end
-    ϕx(z,c) = rhsol(bands,solx,nvec,typevec)(z,c)
+    ϕx = rhsol(bands,solx,nvec,typevec)
     
-    return ϕ,ϕx
+    return ϕx
 end
 
 gV(a,b) = z -> (1/2π)*(-1 + sqrt((z-a)/(z-b) |> Complex))*(2/(b-a))
 gW(a,b) = z -> (1/2π)*(1 - sqrt((z-b)/(z-a) |> Complex))*(2/(b-a))
 
-function solve_rhp(x, t, BA::BakerAkhiezerFunction)
+function solve_rhp(x, t, BA::BakerAkhiezerFunction; deriv = false)
     g = length(BA.WIp)
     bands = zeros(2g,2)
     for j = 1:g
@@ -348,7 +352,7 @@ function solve_rhp(x, t, BA::BakerAkhiezerFunction)
         nv[j,j] = maximum(nv[j,:])
     end
 
-    solve_many_int(bands, Ωs, Ωsx; nmat = nv);
+    solve_many_int(bands, Ωs, Ωsx; nmat = nv, use_deriv = deriv)
 end
 
 function (rh::rhsol)(z,flag::Int)
@@ -373,3 +377,34 @@ function (rh::rhsol)(z,flag::Int)
     evalvec*coeffmat
 end
 
+function my_KdV(BA::BakerAkhiezerFunction,x,t; use_deriv = false)
+    ϕ = solve_rhp(x+6*BA.α1*t, t, BA; deriv = use_deriv)
+    nsum(j) = sum(ϕ.nvec[1:j-1])
+
+    if use_deriv == false
+        s11, s12, s21, s22 = 0., 0., 0., 0.
+        for j = 1:length(ϕ.nvec) #might need to change everything by a sign
+            s11 += ϕ.sol[2nsum(j)+1]*im/2π
+            s21 += ϕ.sol[2nsum(j)+ϕ.nvec[j]+1]*im/2π
+            if ϕ.typevec[j] == 3
+                s12 += ϕ.sol[2nsum(j)+1]*(ϕ.bands[j,1]+3ϕ.bands[j,2])*im/8π
+                s22 += ϕ.sol[2nsum(j)+ϕ.nvec[j]+1]*(ϕ.bands[j,1]+3ϕ.bands[j,2])*im/8π
+            elseif ϕ.typevec[j] == 4
+                s12 += ϕ.sol[2nsum(j)+1]*(3ϕ.bands[j,1]+ϕ.bands[j,2])*im/8π
+                s22 += ϕ.sol[2nsum(j)+ϕ.nvec[j]+1]*(3ϕ.bands[j,1]+ϕ.bands[j,2])*im/8π
+            end
+
+            if ϕ.nvec[j] >= 2
+                s12 += ϕ.sol[2nsum(j)+2]*(ϕ.bands[j,2]-ϕ.bands[j,1])*im/8π
+                s22 += ϕ.sol[2nsum(j)+ϕ.nvec[j]+2]*(ϕ.bands[j,2]-ϕ.bands[j,1])*im/8π
+            end
+        end
+        return -2*(s11*s21+s12+s22) - BA.α1 + BA.F
+    end
+
+    ds1 = 0.
+    for j = 1:length(ϕ.nvec)
+        ds1 += ϕ.sol[2nsum(j)+1]/pi
+    end
+    return ds1 + 2*BA.E - BA.α1
+end

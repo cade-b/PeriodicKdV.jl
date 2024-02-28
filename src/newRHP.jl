@@ -156,7 +156,7 @@ U(x) = [1/(x*√2) -1/(x*√2); 1/√2 1/√2]
 K(α,β) = (2*U(α)'*U(β))[2,:]
 J(θ,θx) = [0 θx*exp(θ); -θx*exp(-θ) 0]
 
-function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::Vector{ComplexF64}; nmat = Nothing, typevec = Nothing, use_deriv = false)
+function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::Vector{ComplexF64}; nmat = Nothing, typevec = Nothing, use_deriv = false, tol = 1e-12, iter = 100)
     g = size(bands,1)-1
     if nmat == Nothing
         nmat = 20*ones(Int,g+1,g+1)
@@ -205,7 +205,7 @@ function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::
         end
     end
     
-    sol = gmres(At,rhs; reltol=1e-12)
+    sol = gmres(At,rhs; abstol=tol, maxiter = iter)
     @inbounds for j = 1:g+1 #undo diagonalization
         x1 = sol[2nsum(j)+1:2nsum(j)+nvec[j]]
         x2 = sol[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]]
@@ -244,7 +244,7 @@ function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::
         rhsx[2nsum(j)+1:2nsum(j)+2nvec[j]] = [apply_inv_plus(v1,bands[j,1],bands[j,2],typevec[j],fftmat[j,:]); apply_inv(v2,bands[j,1],bands[j,2],typevec[j],fftmat[j,:])]
     end
     
-    solx = gmres(At,rhsx; reltol=1e-12)
+    solx = gmres(At,rhsx; abstol=tol, maxiter = iter)
     @inbounds for j = 1:g+1
         x1 = solx[2nsum(j)+1:2nsum(j)+nvec[j]]
         x2 = solx[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]]
@@ -255,104 +255,12 @@ function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::
     return ϕx
 end
 
-gV(a,b) = z -> (1/2π)*(-1 + sqrt((z-a)/(z-b) |> Complex))*(2/(b-a))
-gW(a,b) = z -> (1/2π)*(1 - sqrt((z-b)/(z-a) |> Complex))*(2/(b-a))
-
-function solve_rhp(x, t, BA::BakerAkhiezerFunction; deriv = false)
-    g = length(BA.WIp)
-    bands = zeros(2g,2)
-    for j = 1:g
-        bands[j+g,:] = [BA.WIp[j].a BA.WIp[j].b]
-        bands[j,:] = [BA.WIm[j].a BA.WIm[j].b]
-    end
-    
+function solve_rhp(x, t, BA::BakerAkhiezerFunction; deriv = false, tol = BA.tol)
     Ωs = [-im*reverse(BA.Ω(x,t)); im*BA.Ω(x,t)];
     Ωp = BA.Ω(1.0,0) - BA.Ω(0.0,0)
     Ωsx = [-im*reverse(Ωp); im*Ωp];
 
-    #this section has a couple issues
-    #=nv = zeros(Int64,2g)
-    for j = 1:2g
-        if j == 1 
-            aa = abs(gW(bands[1,1],bands[1,2])(bands[2,1]))
-            jj = abs(J₊(iM(bands[1,1],bands[1,2])(bands[2,1])))
-            val = ceil(log(1e-14/aa)/log(jj))
-        elseif j < g
-            aa1 = abs(gW(bands[j,1],bands[j,2])(bands[j-1,1]))
-            jj1 = abs(J₊(iM(bands[j,1],bands[j,2])(bands[j-1,2])))
-            aa2 = abs(gW(bands[j,1],bands[j,2])(bands[j+1,1]))
-            jj2 = abs(J₊(iM(bands[j,1],bands[j,2])(bands[j+1,2])))
-            val = ceil(max(log(1e-14/aa1)/log(jj1),log(1e-14/aa2)/log(jj2)))
-        elseif j == g
-            aa1 = abs(gW(bands[j,1],bands[j,2])(bands[j-1,1]))
-            jj1 = abs(J₊(iM(bands[j,1],bands[j,2])(bands[j-1,2])))
-            aa2 = abs(gV(bands[j,1],bands[j,2])(bands[j+1,1]))
-            jj2 = abs(J₊(iM(bands[j,1],bands[j,2])(bands[j+1,2])))
-            val = ceil(max(log(1e-14/aa1)/log(jj1),log(1e-14/aa2)/log(jj2)))
-        elseif j < 2g
-            aa1 = abs(gV(bands[j,1],bands[j,2])(bands[j-1,1]))
-            jj1 = abs(J₊(iM(bands[j,1],bands[j,2])(bands[j-1,2])))
-            aa2 = abs(gV(bands[j,1],bands[j,2])(bands[j+1,1]))
-            jj2 = abs(J₊(iM(bands[j,1],bands[j,2])(bands[j+1,2])))
-            val = ceil(max(log(1e-14/aa1)/log(jj1),log(1e-14/aa2)/log(jj2)))
-        else
-            aa = abs(gV(bands[2g,1],bands[2g,2])(bands[2g-1,1]))
-            jj = abs(J₊(iM(bands[2g,1],bands[2g,2])(bands[2g-1,2])))
-            val = ceil(log(1e-14/aa)/log(jj))
-        end
-
-        if val < 1
-            nv[j] = 1
-        else
-            nv[j] = val |> Int
-        end
-    end=#
-
-    nv = zeros(Int64,2g,2g)
-    for j = 1:g
-        for k = 1:j-1
-            aa = abs(gW(bands[j,1],bands[j,2])(bands[k,2]))
-            jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,2])))
-            val = ceil(log(jj,1e-14/aa)) |> Int
-            if val < 1
-                val = 1
-            end
-            nv[j,k] = val
-        end
-        for k = j+1:2g
-            aa = abs(gW(bands[j,1],bands[j,2])(bands[k,1]))
-            jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,1])))
-            val = ceil(log(jj,1e-14/aa)) |> Int
-            if val < 1
-                val = 1
-            end
-            nv[j,k] = val
-        end
-        nv[j,j] = maximum(nv[j,:])
-    end
-    for j = g+1:2g
-        for k = 1:j-1
-            aa = abs(gV(bands[j,1],bands[j,2])(bands[k,2]))
-            jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,2])))
-            val = ceil(log(jj,1e-14/aa)) |> Int
-            if val < 1
-                val = 1
-            end
-            nv[j,k] = val
-        end
-        for k = j+1:2g
-            aa = abs(gV(bands[j,1],bands[j,2])(bands[k,1]))
-            jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,1])))
-            val = ceil(log(jj,1e-14/aa)) |> Int
-            if val < 1
-                val = 1
-            end
-            nv[j,k] = val
-        end
-        nv[j,j] = maximum(nv[j,:])
-    end
-
-    solve_many_int(bands, Ωs, Ωsx; nmat = nv, use_deriv = deriv)
+    solve_many_int(BA.bands, Ωs, Ωsx; nmat = BA.nmat, use_deriv = deriv, tol = tol, iter = BA.iter)
 end
 
 function (rh::rhsol)(z,flag::Int)
@@ -377,7 +285,7 @@ function (rh::rhsol)(z,flag::Int)
     evalvec*coeffmat
 end
 
-function my_KdV(BA::BakerAkhiezerFunction,x,t; use_deriv = false)
+function my_KdV(BA::BakerAkhiezerFunction,x,t; tol = BA.tol, use_deriv = false)
     ϕ = solve_rhp(x+6*BA.α1*t, t, BA; deriv = use_deriv)
     nsum(j) = sum(ϕ.nvec[1:j-1])
 

@@ -506,6 +506,7 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
 #     f = x -> convert(Int,ceil(10 + 10/x^2))
 #     ns = map(f,zgaps_pos[:,1])
     ns = vcat(ns |> reverse, ns)
+	#nv = kron(ns,ones(1,length(ns)))
 
     CpBO = CauchyChop(RHP,RHP,ns,ns,1,tols[2])
     CmBO = CauchyChop(RHP,RHP,ns,ns,-1,tols[2])
@@ -539,7 +540,7 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Array;tols = [2*1e-14,
 #     f = x -> convert(Int,ceil(10 + 10/x^2))
 #     ns = map(f,zgaps_pos[:,1])
     ns = vcat(ns |> reverse, ns)
-	nv = kron(ns,ones(length(ns),length(ns)))
+	nv = kron(ns,ones(1,length(ns)))
     CpBO = CauchyChop(RHP,RHP,ns,ns,1,tols[2])
     CmBO = CauchyChop(RHP,RHP,ns,ns,-1,tols[2])
     #println("Effective rank of Cauchy operator = ",effectiverank(CpBO))

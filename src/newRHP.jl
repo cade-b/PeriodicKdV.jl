@@ -205,7 +205,7 @@ function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::
         end
     end
     
-    sol = gmres(At,rhs; abstol=tol, maxiter = iter)
+    sol = gmres(At,rhs; reltol=tol, maxiter = iter)
     @inbounds for j = 1:g+1 #undo diagonalization
         x1 = sol[2nsum(j)+1:2nsum(j)+nvec[j]]
         x2 = sol[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]]
@@ -244,7 +244,7 @@ function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::
         rhsx[2nsum(j)+1:2nsum(j)+2nvec[j]] = [apply_inv_plus(v1,bands[j,1],bands[j,2],typevec[j],fftmat[j,:]); apply_inv(v2,bands[j,1],bands[j,2],typevec[j],fftmat[j,:])]
     end
     
-    solx = gmres(At,rhsx; abstol=tol, maxiter = iter)
+    solx = gmres(At,rhsx; reltol=tol, maxiter = iter)
     @inbounds for j = 1:g+1
         x1 = solx[2nsum(j)+1:2nsum(j)+nvec[j]]
         x2 = solx[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]]
@@ -286,7 +286,7 @@ function (rh::rhsol)(z,flag::Int)
 end
 
 function my_KdV(BA::BakerAkhiezerFunction,x,t; tol = BA.tol, use_deriv = false)
-    ϕ = solve_rhp(x+6*BA.α1*t, t, BA; deriv = use_deriv)
+    ϕ = solve_rhp(x+6*BA.α1*t, t, BA; deriv = use_deriv, tol = tol)
     nsum(j) = sum(ϕ.nvec[1:j-1])
 
     if use_deriv == false
@@ -307,7 +307,7 @@ function my_KdV(BA::BakerAkhiezerFunction,x,t; tol = BA.tol, use_deriv = false)
                 s22 += ϕ.sol[2nsum(j)+ϕ.nvec[j]+2]*(ϕ.bands[j,2]-ϕ.bands[j,1])*im/8π
             end
         end
-        return -2*(s11*s21+s12+s22) - BA.α1 + BA.F
+        return 2*(s11^2-2s12) - BA.α1 + BA.F#-2*(s11*s21+s12+s22) - BA.α1 + BA.F
     end
 
     ds1 = 0.

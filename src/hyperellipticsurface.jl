@@ -341,6 +341,8 @@ struct BakerAkhiezerFunction
     Cm
 	nmat::Array{Int64}
     ns
+	gridmat::Array{Vector{ComplexF64}}
+    fftmat::Array{FFTW.r2rFFTWPlan}
     tol
     iter
 end
@@ -419,6 +421,7 @@ end
 #     return BakerAkhiezerFunction(WIm,WIp,Ω,S.E[1],S.α1,CpBO,CmBO,ns,tols[1],iter)
 # end
 
+M = (a,b) ->  (x -> (b-a)/2*(x .+ (b+a)/(b-a)))
 iM = (a,b) -> (x -> 2/(b-a)*(x .- (b+a)/2))
 J₊(z) = z-√(z-1 |> Complex)*√(z+1 |> Complex) #inverse Joukowsky map
 gV(a,b) = z -> (1/2π)*(-1 + sqrt((z-a)/(z-b) |> Complex))*(2/(b-a))
@@ -462,19 +465,19 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
             aa = abs(gW(bands[j,1],bands[j,2])(bands[k,2]))
             jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,2])))
             val = ceil(log(jj,tols[2]/aa)) |> Int
-            if val < 1
-                val = 1
+            if val < 0
+                val = 0
             end
-            nv[j,k] = val
+            nv[j,k] = max(val,K)
         end
         for k = j+1:2g
             aa = abs(gW(bands[j,1],bands[j,2])(bands[k,1]))
             jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,1])))
             val = ceil(log(jj,tols[2]/aa)) |> Int
-            if val < 1
-                val = 1
+            if val < 0
+                val = 0
             end
-            nv[j,k] = val
+            nv[j,k] = max(val,K)
         end
         nv[j,j] = maximum(nv[j,:])
     end
@@ -483,19 +486,19 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
             aa = abs(gV(bands[j,1],bands[j,2])(bands[k,2]))
             jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,2])))
             val = ceil(log(jj,tols[2]/aa)) |> Int
-            if val < 1
-                val = 1
+            if val < 0
+                val = 0
             end
-            nv[j,k] = val
+            nv[j,k] = max(val,K)
         end
         for k = j+1:2g
             aa = abs(gV(bands[j,1],bands[j,2])(bands[k,1]))
             jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,1])))
             val = ceil(log(jj,tols[2]/aa)) |> Int
-            if val < 1
-                val = 1
+            if val < 0
+                val = 0
             end
-            nv[j,k] = val
+            nv[j,k] = max(val,K)
         end
         nv[j,j] = maximum(nv[j,:])
     end
@@ -515,8 +518,15 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
     #println("Effective rank of Cauchy operator = ",effectiverank(CpBO))
     #println("Maximum rank of Cauchy operator = ", (2*S.g)^2*n )
 
+	gridmat = Array{Vector{ComplexF64}}(undef,2g) #store collocation points
+    fftmat = Array{FFTW.r2rFFTWPlan}(undef,2g,2)
+    for j = 1:2g
+        gridmat[j] = M(bands[j,1],bands[j,2]).(Ugrid(nv[j,j])) .|> Complex
+        fftmat[j,1] = FFTW.plan_r2r(zeros(ComplexF64,nv[j,j]),FFTW.REDFT11)
+        fftmat[j,2] = FFTW.plan_r2r(zeros(ComplexF64,nv[j,j]),FFTW.RODFT11)
+    end
 
-    return BakerAkhiezerFunction(WIm,WIp,bands,Ω,S.E[1],F,S.α1,CpBO,CmBO,nv,ns,tols[1],iter)
+    return BakerAkhiezerFunction(WIm,WIp,bands,Ω,S.E[1],F,S.α1,CpBO,CmBO,nv,ns,gridmat,fftmat,tols[1],iter)
 end
 
 function BakerAkhiezerFunction(S::HyperellipticSurface,c::Array;tols = [2*1e-14,false],iter = 100)
@@ -545,7 +555,17 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Array;tols = [2*1e-14,
     CmBO = CauchyChop(RHP,RHP,ns,ns,-1,tols[2])
     #println("Effective rank of Cauchy operator = ",effectiverank(CpBO))
     #println("Maximum rank of Cauchy operator = ", (2*S.g)^2*n )
-    return BakerAkhiezerFunction(WIm,WIp,bands,Ω,S.E[1],F,S.α1,CpBO,CmBO,nv,ns,tols[1],iter)
+
+	g = size(zgaps_neg,1)
+	gridmat = Array{Vector{ComplexF64}}(undef,2g) #store collocation points
+    fftmat = Array{FFTW.r2rFFTWPlan}(undef,2g,2)
+    for j = 1:2g
+        gridmat[j] = M(bands[j,1],bands[j,2]).(Ugrid(ns[j])) .|> Complex
+        fftmat[j,1] = FFTW.plan_r2r(zeros(ComplexF64,ns[j]),FFTW.REDFT11)
+        fftmat[j,2] = FFTW.plan_r2r(zeros(ComplexF64,ns[j]),FFTW.RODFT11)
+    end
+
+    return BakerAkhiezerFunction(WIm,WIp,bands,Ω,S.E[1],F,S.α1,CpBO,CmBO,nv,ns,gridmat,fftmat,tols[1],iter)
 end
 
 function (BA::BakerAkhiezerFunction)(x,t,tol = BA.tol; directsolve = false, getmatrices = false)
@@ -634,6 +654,13 @@ function (BA::BakerAkhiezerFunction)(x,t,tol = BA.tol; directsolve = false, getm
 
     	PrS = x -> BlockVector(fine_ind,D\BlockVector(coarse_ind,x))
 		Op = x -> x + PrS(Sp*x)
+		#Opmat = Op |> Array
+		#e1 = zeros(size(Vector(bp)))
+		#=f1 = BlockVector(ind,fill(0.0im,dim))
+		e1 = permute(f1,p)
+		e1[1][1] = 1.
+		#println(norm(Opmat*e1))
+		println(sqrt(abs(Op(e1)⋅Op(e1))))=#
     	out = GMRES_quiet(Op,PrS(bp),⋅, tol,BA.iter)
     	solp = out[2][1]*out[1][1]
     	for j = 2:length(out[2])

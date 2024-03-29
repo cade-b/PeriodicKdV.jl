@@ -464,6 +464,7 @@ function chop(B::Array,tol)
     A = svd(B)
     s = A.S
     if A.S[1] < tol
+        #println("operator zeroed")
        return ZeroOperator(size(B)[1],size(B)[2])
     end
     j = length(s)

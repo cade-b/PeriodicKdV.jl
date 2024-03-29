@@ -156,7 +156,33 @@ U(x) = [1/(x*√2) -1/(x*√2); 1/√2 1/√2]
 K(α,β) = (2*U(α)'*U(β))[2,:]
 J(θ,θx) = [0 θx*exp(θ); -θx*exp(-θ) 0]
 
-function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::Vector{ComplexF64}; nmat = Nothing, typevec = Nothing, use_deriv = false, tol = 1e-12, iter = 100)
+function apply_op!(x, v, cons, N, aj, bj, ak, bk, typej, typek, grid, fftvec)
+    if N == 0
+        return
+    end
+    axpy!(cons,apply_inv(apply_Cauchy(x,N,ak,bk,grid,typek),aj,bj,typej,fftvec),v)
+end
+
+function A_map(x,Ωs::Vector{ComplexF64},bands::Array{Float64,2},nvec::Vector{Int},nmat::Array{Int64},typevec::Vector{Int},gridmat::Array{Vector{ComplexF64}},fftmat::Array{FFTW.r2rFFTWPlan}) #applies preconditioned and diagonalized operator
+    v = copy(x)
+    nsum(j) = sum(nvec[1:j-1])
+    @inbounds for j = 1:size(bands,1)
+        vadd = zeros(ComplexF64,nvec[j])
+        for k = (1:size(bands,1))[1:end .!= j,:]
+            #x1 = x[2nsum(k)+1:2nsum(k)+nvec[k]]
+            #x2 = x[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]]
+
+            #apply_op!(x[2nsum(k)+1:2nsum(k)+nvec[k]],vadd, K(exp(Ωs[j]),exp(Ωs[k]))[1], nmat[k,j], bands[j,1], bands[j,2], bands[k,1], bands[k,2], typevec[j], typevec[k], gridmat[j], fftmat[j,:])
+            #apply_op!(x[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]],vadd, K(exp(Ωs[j]),exp(Ωs[k]))[2], nmat[k,j], bands[j,1], bands[j,2], bands[k,1], bands[k,2], typevec[j], typevec[k], gridmat[j], fftmat[j,:])
+            axpy!(K(exp(Ωs[j]),exp(Ωs[k]))[1],apply_inv(apply_Cauchy(x[2nsum(k)+1:2nsum(k)+nvec[k]],nmat[k,j],bands[k,1],bands[k,2],gridmat[j],typevec[k]),bands[j,1],bands[j,2],typevec[j],fftmat[j,:]),vadd)
+            axpy!(K(exp(Ωs[j]),exp(Ωs[k]))[2],apply_inv(apply_Cauchy(x[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]],nmat[k,j],bands[k,1],bands[k,2],gridmat[j],typevec[k]),bands[j,1],bands[j,2],typevec[j],fftmat[j,:]),vadd)
+        end
+        v[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]] += vadd
+    end
+    v
+end
+
+function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::Vector{ComplexF64}, gridmat::Array{Vector{ComplexF64}}, fftmat::Array{FFTW.r2rFFTWPlan}; nmat = Nothing, typevec = Nothing, use_deriv = false, tol = 1e-12, iter = 100)
     g = size(bands,1)-1
     if nmat == Nothing
         nmat = 20*ones(Int,g+1,g+1)
@@ -169,32 +195,8 @@ function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::
         gg = (g+1)/2 |> Int
         typevec = [4*ones(Int,gg); 3*ones(Int,gg)]
     end
-
-    gridmat = Array{Vector{ComplexF64}}(undef,g+1) #store collocation points
-    fftmat = Array{FFTW.r2rFFTWPlan}(undef,g+1,2)
-    for j = 1:g+1
-        gridmat[j] = M(bands[j,1],bands[j,2]).(Ugrid(nvec[j])) .|> Complex
-        fftmat[j,1] = FFTW.plan_r2r(zeros(ComplexF64,nvec[j]),FFTW.REDFT11)
-        fftmat[j,2] = FFTW.plan_r2r(zeros(ComplexF64,nvec[j]),FFTW.RODFT11)
-    end
     
-    function A_map(x) #applies preconditioned and diagonalized operator
-        v = copy(x)
-        @inbounds for j = 1:g+1
-            vadd = zeros(ComplexF64,nvec[j])
-            for k = (1:g+1)[1:end .!= j,:]
-                #x1 = x[2nsum(k)+1:2nsum(k)+nvec[k]]
-                #x2 = x[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]]
-
-                axpy!(K(exp(Ωs[j]),exp(Ωs[k]))[1],apply_inv(apply_Cauchy(x[2nsum(k)+1:2nsum(k)+nvec[k]],nmat[k,j],bands[k,1],bands[k,2],gridmat[j],typevec[k]),bands[j,1],bands[j,2],typevec[j],fftmat[j,:]),vadd)
-                axpy!(K(exp(Ωs[j]),exp(Ωs[k]))[2],apply_inv(apply_Cauchy(x[2nsum(k)+nvec[k]+1:2nsum(k)+2nvec[k]],nmat[k,j],bands[k,1],bands[k,2],gridmat[j],typevec[k]),bands[j,1],bands[j,2],typevec[j],fftmat[j,:]),vadd)
-            end
-            v[2nsum(j)+nvec[j]+1:2nsum(j)+2nvec[j]] += vadd
-        end
-        v
-    end
-    
-    At = LinearMap(A_map, 2*sum(nvec); issymmetric=false, ismutating=false)
+    At = LinearMap(x -> A_map(x,Ωs,bands,nvec,nmat,typevec,gridmat,fftmat), 2*sum(nvec); issymmetric=false, ismutating=false)
     #preconditoned and diagonalized RHS can be computed explicitly
     rhs = zeros(ComplexF64, 2*sum(nvec))
     @inbounds for j = 1:g+1
@@ -205,6 +207,15 @@ function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::
         end
     end
     
+    #=out = GMRES(x -> A_map(x,Ωs,bands,nvec,nmat,typevec,gridmat,fftmat),rhs,⋅,tol,iter)
+    sol = out[2][1]*out[1][1]
+    for j = 2:length(out[2])
+        sol += out[2][j]*out[1][j]
+    end=#
+    
+    #=e1 = zeros(ComplexF64,2*sum(nvec))
+    e1[1] = 1.
+    println(norm(At(e1)))=#
     sol = gmres(At,rhs; reltol=tol, maxiter = iter)
     @inbounds for j = 1:g+1 #undo diagonalization
         x1 = sol[2nsum(j)+1:2nsum(j)+nvec[j]]
@@ -260,7 +271,7 @@ function solve_rhp(x, t, BA::BakerAkhiezerFunction; deriv = false, tol = BA.tol)
     Ωp = BA.Ω(1.0,0) - BA.Ω(0.0,0)
     Ωsx = [-im*reverse(Ωp); im*Ωp];
 
-    solve_many_int(BA.bands, Ωs, Ωsx; nmat = BA.nmat, use_deriv = deriv, tol = tol, iter = BA.iter)
+    solve_many_int(BA.bands, Ωs, Ωsx, BA.gridmat, BA.fftmat; nmat = BA.nmat, use_deriv = deriv, tol = tol, iter = BA.iter)
 end
 
 function (rh::rhsol)(z,flag::Int)
@@ -292,27 +303,31 @@ function my_KdV(BA::BakerAkhiezerFunction,x,t; tol = BA.tol, use_deriv = false)
     if use_deriv == false
         s11, s12, s21, s22 = 0., 0., 0., 0.
         for j = 1:length(ϕ.nvec) #might need to change everything by a sign
-            s11 += ϕ.sol[2nsum(j)+1]*im/2π
-            s21 += ϕ.sol[2nsum(j)+ϕ.nvec[j]+1]*im/2π
-            if ϕ.typevec[j] == 3
-                s12 += ϕ.sol[2nsum(j)+1]*(ϕ.bands[j,1]+3ϕ.bands[j,2])*im/8π
-                s22 += ϕ.sol[2nsum(j)+ϕ.nvec[j]+1]*(ϕ.bands[j,1]+3ϕ.bands[j,2])*im/8π
-            elseif ϕ.typevec[j] == 4
-                s12 += ϕ.sol[2nsum(j)+1]*(3ϕ.bands[j,1]+ϕ.bands[j,2])*im/8π
-                s22 += ϕ.sol[2nsum(j)+ϕ.nvec[j]+1]*(3ϕ.bands[j,1]+ϕ.bands[j,2])*im/8π
-            end
+            if ϕ.nvec[j] >= 1
+                s11 += ϕ.sol[2nsum(j)+1]*im/2π
+                s21 += ϕ.sol[2nsum(j)+ϕ.nvec[j]+1]*im/2π
+                if ϕ.typevec[j] == 3
+                    s12 += ϕ.sol[2nsum(j)+1]*(ϕ.bands[j,1]+3ϕ.bands[j,2])*im/8π
+                    s22 += ϕ.sol[2nsum(j)+ϕ.nvec[j]+1]*(ϕ.bands[j,1]+3ϕ.bands[j,2])*im/8π
+                elseif ϕ.typevec[j] == 4
+                    s12 += ϕ.sol[2nsum(j)+1]*(3ϕ.bands[j,1]+ϕ.bands[j,2])*im/8π
+                    s22 += ϕ.sol[2nsum(j)+ϕ.nvec[j]+1]*(3ϕ.bands[j,1]+ϕ.bands[j,2])*im/8π
+                end
 
-            if ϕ.nvec[j] >= 2
-                s12 += ϕ.sol[2nsum(j)+2]*(ϕ.bands[j,2]-ϕ.bands[j,1])*im/8π
-                s22 += ϕ.sol[2nsum(j)+ϕ.nvec[j]+2]*(ϕ.bands[j,2]-ϕ.bands[j,1])*im/8π
+                if ϕ.nvec[j] >= 2
+                    s12 += ϕ.sol[2nsum(j)+2]*(ϕ.bands[j,2]-ϕ.bands[j,1])*im/8π
+                    s22 += ϕ.sol[2nsum(j)+ϕ.nvec[j]+2]*(ϕ.bands[j,2]-ϕ.bands[j,1])*im/8π
+                end
             end
         end
-        return 2*(s11^2-2s12) - BA.α1 + BA.F#-2*(s11*s21+s12+s22) - BA.α1 + BA.F
+        return -2*(s11*s21+s12+s22) - BA.α1 + BA.F
     end
 
     ds1 = 0.
     for j = 1:length(ϕ.nvec)
-        ds1 += ϕ.sol[2nsum(j)+1]/pi
+        if ϕ.nvec[j] >= 1
+            ds1 += ϕ.sol[2nsum(j)+1]/pi
+        end
     end
     return ds1 + 2*BA.E - BA.α1
 end

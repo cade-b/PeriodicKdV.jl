@@ -296,7 +296,18 @@ function (rh::rhsol)(z,flag::Int)
     evalvec*coeffmat
 end
 
-function my_KdV(BA::BakerAkhiezerFunction,x,t; tol = BA.tol, use_deriv = false)
+function (BA::BakerAkhiezerFunction)(x,t,tol = BA.tol; deriv = false)
+    ϕ = solve_rhp(x, t, BA; tol = tol)
+    ψ(z,c) = ϕ(z,c) + [1 1]
+    if deriv == true
+        ϕx = solve_rhp(x, t, BA; tol = tol, deriv = true)
+        ψx(z,c) = ϕx(z,c)
+        return (ψ, ψx, ϕ.sol, ϕx.sol, BA.E)
+    end
+    return (ψ, ϕ.sol, BA.E)
+end
+
+function KdV(BA::BakerAkhiezerFunction,x,t; tol = BA.tol, use_deriv = false)
     ϕ = solve_rhp(x+6*BA.α1*t, t, BA; deriv = use_deriv, tol = tol)
     nsum(j) = sum(ϕ.nvec[1:j-1])
 
@@ -323,11 +334,17 @@ function my_KdV(BA::BakerAkhiezerFunction,x,t; tol = BA.tol, use_deriv = false)
         return -2*(s11*s21+s12+s22) - BA.α1 + BA.F
     end
 
-    ds1 = 0.
-    for j = 1:length(ϕ.nvec)
-        if ϕ.nvec[j] >= 1
-            ds1 += ϕ.sol[2nsum(j)+1]/pi
+    if use_deriv == true
+        ds1 = 0.
+        for j = 1:length(ϕ.nvec)
+            if ϕ.nvec[j] >= 1
+                ds1 += ϕ.sol[2nsum(j)+1]/pi
+            end
         end
+        return ds1 + 2*BA.E - BA.α1
     end
-    return ds1 + 2*BA.E - BA.α1
+end
+
+function KdV(BA::BakerAkhiezerFunction,x,t,tol; use_deriv = false)
+    KdV(BA,x,t; tol = tol, use_deriv = use_deriv)
 end

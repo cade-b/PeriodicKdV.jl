@@ -15,7 +15,7 @@ include("circlefun.jl")
 include("newRHP.jl")
 
 export cauchy, poly, transformT, transformV, transformU, transformW, SIE, SIE_new, chebV, chebU, chebW, chebT, WeightedInterval, WeightPlot, Cut, spy, FunPlot, GMRES, CauchyChop, Cauchy, M, iM, Ugrid, DefiniteIntegral, BlockVector,
-aT, bT, aU, bU, aW, bW, aV, bV, HyperellipticSurface, BakerAkhiezerFunction, KdV, CircleFun, solve_rhp, rhsol, my_KdV
+aT, bT, aU, bU, aW, bW, aV, bV, HyperellipticSurface, BakerAkhiezerFunction, KdV, CircleFun, solve_rhp, rhsol
 
 
 

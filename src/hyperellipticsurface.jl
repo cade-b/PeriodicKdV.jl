@@ -330,19 +330,27 @@ function HyperellipticSurface(gaps,zs,α1,m=50;cycleflag = false)
 end
 
 struct BakerAkhiezerFunction
-    WIm::Vector{WeightedInterval}
-    WIp::Vector{WeightedInterval}
 	bands::Array{Float64,2}
     Ω::Function
     E::Complex{Float64}
 	F::Float64
     α1
-    Cp # Compressed Cauchy matrix
-    Cm
 	nmat::Array{Int64}
-    ns
 	gridmat::Array{Vector{ComplexF64}}
     fftmat::Array{FFTW.r2rFFTWPlan}
+    tol
+    iter
+end
+
+struct BakerAkhiezerFunction_old
+    WIm::Vector{WeightedInterval}
+    WIp::Vector{WeightedInterval}
+    Ω::Function
+    E::Complex{Float64}
+    α1
+    Cp # Compressed Cauchy matrix
+    Cm
+    ns
     tol
     iter
 end
@@ -427,148 +435,163 @@ J₊(z) = z-√(z-1 |> Complex)*√(z+1 |> Complex) #inverse Joukowsky map
 gV(a,b) = z -> (1/2π)*(-1 + sqrt((z-a)/(z-b) |> Complex))*(2/(b-a))
 gW(a,b) = z -> (1/2π)*(1 - sqrt((z-b)/(z-a) |> Complex))*(2/(b-a))
 
-function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-14,1e-14],iter = 100,K=0,show_flag=false,choose_points = "adaptive",max_pts = 1000,max_ppi=Inf)
+function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-14,1e-14],iter = 100,K=0,show_flag=false,choose_points = "adaptive",max_pts = 1000,max_ppi=Inf,method = "new")
     zgaps_neg = hcat(- sqrt.(S.gaps[:,2]) |> reverse, - sqrt.(S.gaps[:,1]) |> reverse)
     zgaps_pos = hcat( sqrt.(S.gaps[:,1]) , sqrt.(S.gaps[:,2]) )
-	bands = [zgaps_neg; zgaps_pos]
-	F = sum(S.gaps[:,2] - S.gaps[:,1])
-    #zzs_pos = sqrt.(zs)
-    #zzs_neg = -sqrt.(zs) |> reverse;
-    fV = (x,y) -> WeightedInterval(x,y,chebV)
-    fW = (x,y) -> WeightedInterval(x,y,chebW)
-    Ω = (x,t) -> S.Ωx*x + S.Ωt*t + S.Ω0
+	Ω = (x,t) -> S.Ωx*x + S.Ωt*t + S.Ω0
 
-    WIm = map(fW,zgaps_neg[:,1],zgaps_neg[:,2])
-    WIp = map(fV,zgaps_pos[:,1],zgaps_pos[:,2])
+	if method == "new"
+		bands = [zgaps_neg; zgaps_pos]
+		F = sum(S.gaps[:,2] - S.gaps[:,1])
 
-    Ωs = Ω(0.0,0.0)
-    RHP = vcat(map(gm,WIm,Ωs |> reverse),map(gp,WIp,Ωs));
-	if choose_points == "adaptive"
-    	ns = map(x -> min(x,max_pts), choose_order(zgaps_pos,tols[1],c,K))
-	elseif typeof(choose_points) <: Vector
-		if length(choose_points) >= length(WIp)
-			ns = choose_points[1:length(WIp)]
-		else
-			ns = vcat(choose_points,fill(choose_points[end],length(WIp)-length(choose_points)))
+		g = size(zgaps_neg,1)
+		nv = zeros(Int64,2g,2g)
+		if tols[2] == false
+			tols[2] = 1e-16
 		end
-	else
-		ns = fill(choose_points,WIp |> length)
+
+		for j = 1:g
+			for k = 1:j-1
+				aa = abs(gW(bands[j,1],bands[j,2])(bands[k,2]))
+				jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,2])))
+				val = ceil(log(jj,tols[2]/aa)) |> Int
+				if val < 0
+					val = 0
+				end
+				nv[j,k] = min(max(val,K),max_ppi)
+			end
+			for k = j+1:2g
+				aa = abs(gW(bands[j,1],bands[j,2])(bands[k,1]))
+				jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,1])))
+				val = ceil(log(jj,tols[2]/aa)) |> Int
+				if val < 0
+					val = 0
+				end
+				nv[j,k] = min(max(val,K),max_ppi)
+			end
+			nv[j,j] = maximum(nv[j,:])
+		end
+		for j = g+1:2g
+			for k = 1:j-1
+				aa = abs(gV(bands[j,1],bands[j,2])(bands[k,2]))
+				jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,2])))
+				val = ceil(log(jj,tols[2]/aa)) |> Int
+				if val < 0
+					val = 0
+				end
+				nv[j,k] = min(max(val,K),max_ppi)
+			end
+			for k = j+1:2g
+				aa = abs(gV(bands[j,1],bands[j,2])(bands[k,1]))
+				jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,1])))
+				val = ceil(log(jj,tols[2]/aa)) |> Int
+				if val < 0
+					val = 0
+				end
+				nv[j,k] = min(max(val,K),max_ppi)
+			end
+			nv[j,j] = maximum(nv[j,:])
+		end
+
+		gridmat = Array{Vector{ComplexF64}}(undef,2g) #store collocation points
+		fftmat = Array{FFTW.r2rFFTWPlan}(undef,2g,2)
+		for j = 1:2g
+			gridmat[j] = M(bands[j,1],bands[j,2]).(Ugrid(nv[j,j])) .|> Complex
+			fftmat[j,1] = FFTW.plan_r2r(zeros(ComplexF64,nv[j,j]),FFTW.REDFT11)
+			fftmat[j,2] = FFTW.plan_r2r(zeros(ComplexF64,nv[j,j]),FFTW.RODFT11)
+		end
+
+		return BakerAkhiezerFunction(bands,Ω,S.E[1],F,S.α1,nv,gridmat,fftmat,tols[1],iter)
 	end
-    if show_flag
-    	println(ns)
-    end
 
-	g = size(zgaps_neg,1)
-	nv = zeros(Int64,2g,2g)
-    for j = 1:g
-        for k = 1:j-1
-            aa = abs(gW(bands[j,1],bands[j,2])(bands[k,2]))
-            jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,2])))
-            val = ceil(log(jj,tols[2]/aa)) |> Int
-            if val < 0
-                val = 0
-            end
-            nv[j,k] = min(max(val,K),max_ppi)
-        end
-        for k = j+1:2g
-            aa = abs(gW(bands[j,1],bands[j,2])(bands[k,1]))
-            jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,1])))
-            val = ceil(log(jj,tols[2]/aa)) |> Int
-            if val < 0
-                val = 0
-            end
-            nv[j,k] = min(max(val,K),max_ppi)
-        end
-        nv[j,j] = maximum(nv[j,:])
-    end
-    for j = g+1:2g
-        for k = 1:j-1
-            aa = abs(gV(bands[j,1],bands[j,2])(bands[k,2]))
-            jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,2])))
-            val = ceil(log(jj,tols[2]/aa)) |> Int
-            if val < 0
-                val = 0
-            end
-            nv[j,k] = min(max(val,K),max_ppi)
-        end
-        for k = j+1:2g
-            aa = abs(gV(bands[j,1],bands[j,2])(bands[k,1]))
-            jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,1])))
-            val = ceil(log(jj,tols[2]/aa)) |> Int
-            if val < 0
-                val = 0
-            end
-            nv[j,k] = min(max(val,K),max_ppi)
-        end
-        nv[j,j] = maximum(nv[j,:])
-    end
+	if method == "old"
+		#zzs_pos = sqrt.(zs)
+		#zzs_neg = -sqrt.(zs) |> reverse;
+		fV = (x,y) -> WeightedInterval(x,y,chebV)
+		fW = (x,y) -> WeightedInterval(x,y,chebW)
 
-#     #lens = abs.(zgaps[:,1] - zgaps[:,2])
+		WIm = map(fW,zgaps_neg[:,1],zgaps_neg[:,2])
+		WIp = map(fV,zgaps_pos[:,1],zgaps_pos[:,2])
+
+		Ωs = Ω(0.0,0.0)
+		RHP = vcat(map(gm,WIm,Ωs |> reverse),map(gp,WIp,Ωs));
+		if choose_points == "adaptive"
+			ns = map(x -> min(x,max_pts), choose_order(zgaps_pos,tols[1],c,K))
+		elseif typeof(choose_points) <: Vector
+			if length(choose_points) >= length(WIp)
+				ns = choose_points[1:length(WIp)]
+			else
+				ns = vcat(choose_points,fill(choose_points[end],length(WIp)-length(choose_points)))
+			end
+		else
+			ns = fill(choose_points,WIp |> length)
+		end
+		if show_flag
+			println(ns)
+		end
+	#     #lens = abs.(zgaps[:,1] - zgaps[:,2])
 
 
-#     f = x -> convert(Int,ceil(10 + 10/x^2))
-#     ns = map(f,zgaps_pos[:,1])
-    ns = vcat(ns |> reverse, ns)
-	#nv = kron(ns,ones(1,length(ns)))
+	#     f = x -> convert(Int,ceil(10 + 10/x^2))
+	#     ns = map(f,zgaps_pos[:,1])
+		ns = vcat(ns |> reverse, ns)
+		#nv = kron(ns,ones(1,length(ns)))
 
-    CpBO = CauchyChop(RHP,RHP,ns,ns,1,tols[2])
-    CmBO = CauchyChop(RHP,RHP,ns,ns,-1,tols[2])
+		CpBO = CauchyChop(RHP,RHP,ns,ns,1,tols[2])
+		CmBO = CauchyChop(RHP,RHP,ns,ns,-1,tols[2])
 
-
-    #println("Effective rank of Cauchy operator = ",effectiverank(CpBO))
-    #println("Maximum rank of Cauchy operator = ", (2*S.g)^2*n )
-
-	gridmat = Array{Vector{ComplexF64}}(undef,2g) #store collocation points
-    fftmat = Array{FFTW.r2rFFTWPlan}(undef,2g,2)
-    for j = 1:2g
-        gridmat[j] = M(bands[j,1],bands[j,2]).(Ugrid(nv[j,j])) .|> Complex
-        fftmat[j,1] = FFTW.plan_r2r(zeros(ComplexF64,nv[j,j]),FFTW.REDFT11)
-        fftmat[j,2] = FFTW.plan_r2r(zeros(ComplexF64,nv[j,j]),FFTW.RODFT11)
-    end
-
-    return BakerAkhiezerFunction(WIm,WIp,bands,Ω,S.E[1],F,S.α1,CpBO,CmBO,nv,ns,gridmat,fftmat,tols[1],iter)
+		#println("Effective rank of Cauchy operator = ",effectiverank(CpBO))
+		#println("Maximum rank of Cauchy operator = ", (2*S.g)^2*n )
+		return BakerAkhiezerFunction_old(WIm,WIp,Ω,S.E[1],S.α1,CpBO,CmBO,ns,tols[1],iter)
+	end
 end
 
-function BakerAkhiezerFunction(S::HyperellipticSurface,c::Array;tols = [2*1e-14,false],iter = 100)
+function BakerAkhiezerFunction(S::HyperellipticSurface,c::Array;tols = [2*1e-14,false],iter = 100,method = "new")
     zgaps_neg = hcat(- sqrt.(S.gaps[:,2]) |> reverse, - sqrt.(S.gaps[:,1]) |> reverse)
-	bands = [zgaps_neg; zgaps_pos]
     zgaps_pos = hcat( sqrt.(S.gaps[:,1]) , sqrt.(S.gaps[:,2]) )
-	F = sum(S.gaps[:,2] - S.gaps[:,1])
-    #zzs_pos = sqrt.(zs)
-    #zzs_neg = -sqrt.(zs) |> reverse;
-    fV = (x,y) -> WeightedInterval(x,y,chebV)
-    fW = (x,y) -> WeightedInterval(x,y,chebW)
-    Ω = (x,t) -> S.Ωx*x + S.Ωt*t + S.Ω0
+	Ω = (x,t) -> S.Ωx*x + S.Ωt*t + S.Ω0
+	ns = c # choose_order(zgaps_pos,tol,c)
+	ns = vcat(ns |> reverse, ns)
+	
+	if method == "new"
+		bands = [zgaps_neg; zgaps_pos]
+		F = sum(S.gaps[:,2] - S.gaps[:,1])
+		nv = kron(ns,ones(1,length(ns)))
+		g = size(zgaps_neg,1)
+		gridmat = Array{Vector{ComplexF64}}(undef,2g) #store collocation points
+		fftmat = Array{FFTW.r2rFFTWPlan}(undef,2g,2)
+		for j = 1:2g
+			gridmat[j] = M(bands[j,1],bands[j,2]).(Ugrid(ns[j])) .|> Complex
+			fftmat[j,1] = FFTW.plan_r2r(zeros(ComplexF64,ns[j]),FFTW.REDFT11)
+			fftmat[j,2] = FFTW.plan_r2r(zeros(ComplexF64,ns[j]),FFTW.RODFT11)
+		end
+		return BakerAkhiezerFunction(bands,Ω,S.E[1],F,S.α1,nv,gridmat,fftmat,tols[1],iter)
+	end
 
-    WIm = map(fW,zgaps_neg[:,1],zgaps_neg[:,2])
-    WIp = map(fV,zgaps_pos[:,1],zgaps_pos[:,2])
+	if method == "old"
+		#zzs_pos = sqrt.(zs)
+		#zzs_neg = -sqrt.(zs) |> reverse;
+		fV = (x,y) -> WeightedInterval(x,y,chebV)
+		fW = (x,y) -> WeightedInterval(x,y,chebW)		
 
-    Ωs = Ω(0.0,0.0)
-    RHP = vcat(map(gm,WIm,Ωs |> reverse),map(gp,WIp,Ωs));
-    ns = c # choose_order(zgaps_pos,tol,c)
-#     #lens = abs.(zgaps[:,1] - zgaps[:,2])
-#     f = x -> convert(Int,ceil(10 + 10/x^2))
-#     ns = map(f,zgaps_pos[:,1])
-    ns = vcat(ns |> reverse, ns)
-	nv = kron(ns,ones(1,length(ns)))
-    CpBO = CauchyChop(RHP,RHP,ns,ns,1,tols[2])
-    CmBO = CauchyChop(RHP,RHP,ns,ns,-1,tols[2])
-    #println("Effective rank of Cauchy operator = ",effectiverank(CpBO))
-    #println("Maximum rank of Cauchy operator = ", (2*S.g)^2*n )
+		WIm = map(fW,zgaps_neg[:,1],zgaps_neg[:,2])
+		WIp = map(fV,zgaps_pos[:,1],zgaps_pos[:,2])
 
-	g = size(zgaps_neg,1)
-	gridmat = Array{Vector{ComplexF64}}(undef,2g) #store collocation points
-    fftmat = Array{FFTW.r2rFFTWPlan}(undef,2g,2)
-    for j = 1:2g
-        gridmat[j] = M(bands[j,1],bands[j,2]).(Ugrid(ns[j])) .|> Complex
-        fftmat[j,1] = FFTW.plan_r2r(zeros(ComplexF64,ns[j]),FFTW.REDFT11)
-        fftmat[j,2] = FFTW.plan_r2r(zeros(ComplexF64,ns[j]),FFTW.RODFT11)
-    end
-
-    return BakerAkhiezerFunction(WIm,WIp,bands,Ω,S.E[1],F,S.α1,CpBO,CmBO,nv,ns,gridmat,fftmat,tols[1],iter)
+		Ωs = Ω(0.0,0.0)
+		RHP = vcat(map(gm,WIm,Ωs |> reverse),map(gp,WIp,Ωs));
+	#     #lens = abs.(zgaps[:,1] - zgaps[:,2])
+	#     f = x -> convert(Int,ceil(10 + 10/x^2))
+	#     ns = map(f,zgaps_pos[:,1])
+		
+		CpBO = CauchyChop(RHP,RHP,ns,ns,1,tols[2])
+		CmBO = CauchyChop(RHP,RHP,ns,ns,-1,tols[2])
+		#println("Effective rank of Cauchy operator = ",effectiverank(CpBO))
+		#println("Maximum rank of Cauchy operator = ", (2*S.g)^2*n )
+		return BakerAkhiezerFunction_old(WIm,WIp,Ω,S.E[1],S.α1,CpBO,CmBO,ns,tols[1],iter)
+	end
 end
 
-function (BA::BakerAkhiezerFunction)(x,t,tol = BA.tol; directsolve = false, getmatrices = false)
+function (BA::BakerAkhiezerFunction_old)(x,t,tol = BA.tol; directsolve = false, getmatrices = false)
     ns = BA.ns
     Ωs = BA.Ω(x,t)
     Ωsx = BA.Ω(1.0,0) - BA.Ω(0.0,0)
@@ -689,14 +712,14 @@ function (BA::BakerAkhiezerFunction)(x,t,tol = BA.tol; directsolve = false, getm
     #(Φ,f1,f2)
 end
 
-function KdV(BA::BakerAkhiezerFunction,x,t; directsolve = false)
+function KdV(BA::BakerAkhiezerFunction_old,x,t; directsolve = false)
     out = BA(x+6*BA.α1*t, t; directsolve);
     1/pi*sum(map(x -> DomainIntegrateVW(x), out[5])) + 2*BA.E - BA.α1 #change index back eventually
     # I think this is right but I cannot justify it, +/- sign issue
     # It must have to do with the jumps and which sheet, etc.
 end
 
-function KdV(BA::BakerAkhiezerFunction,x,t,tol; directsolve = false)
+function KdV(BA::BakerAkhiezerFunction_old,x,t,tol; directsolve = false)
     out = BA(x+6*BA.α1*t, t, tol; directsolve);
     1/pi*sum(map(x -> DomainIntegrateVW(x), out[5])) + 2*BA.E - BA.α1 #change index back eventually
     # I think this is right but I cannot justify it, +/- sign issue

@@ -19,7 +19,7 @@ SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 ApproxFun = "0.11.8, 0.12"
 BandedMatrices = "0.16"
 Colors = "0.12"
-FastTransforms = "0.16"
+FastTransforms = "^0"
 Plots = "1.2"
 julia = "^1.6"
 

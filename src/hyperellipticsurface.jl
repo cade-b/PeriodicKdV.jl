@@ -435,7 +435,7 @@ J₊(z) = z-√(z-1 |> Complex)*√(z+1 |> Complex) #inverse Joukowsky map
 gV(a,b) = z -> (1/2π)*(-1 + sqrt((z-a)/(z-b) |> Complex))*(2/(b-a))
 gW(a,b) = z -> (1/2π)*(1 - sqrt((z-b)/(z-a) |> Complex))*(2/(b-a))
 
-function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-14,1e-14],iter = 100,K=0,show_flag=false,choose_points = "adaptive",max_pts = 1000,max_ppi=Inf,method = "new")
+function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-14,1e-14],iter = 100,K=0,show_flag=false,choose_points = "adaptive",max_pts = 1000,method = "new")
     zgaps_neg = hcat(- sqrt.(S.gaps[:,2]) |> reverse, - sqrt.(S.gaps[:,1]) |> reverse)
     zgaps_pos = hcat( sqrt.(S.gaps[:,1]) , sqrt.(S.gaps[:,2]) )
 	Ω = (x,t) -> S.Ωx*x + S.Ωt*t + S.Ω0
@@ -458,7 +458,7 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
 				if val < 0
 					val = 0
 				end
-				nv[j,k] = min(max(val,K),max_ppi)
+				nv[j,k] = min(max(val,K),max_pts)
 			end
 			for k = j+1:2g
 				aa = abs(gW(bands[j,1],bands[j,2])(bands[k,1]))
@@ -467,7 +467,7 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
 				if val < 0
 					val = 0
 				end
-				nv[j,k] = min(max(val,K),max_ppi)
+				nv[j,k] = min(max(val,K),max_pts)
 			end
 			nv[j,j] = maximum(nv[j,:])
 		end
@@ -479,7 +479,7 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
 				if val < 0
 					val = 0
 				end
-				nv[j,k] = min(max(val,K),max_ppi)
+				nv[j,k] = min(max(val,K),max_pts)
 			end
 			for k = j+1:2g
 				aa = abs(gV(bands[j,1],bands[j,2])(bands[k,1]))
@@ -488,7 +488,7 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
 				if val < 0
 					val = 0
 				end
-				nv[j,k] = min(max(val,K),max_ppi)
+				nv[j,k] = min(max(val,K),max_pts)
 			end
 			nv[j,j] = maximum(nv[j,:])
 		end

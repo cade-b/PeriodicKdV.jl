@@ -9,7 +9,7 @@ Ugrid = n -> cos.( (2*(1:n) .- 1)/(2*n) * pi)
     kind::Int
 end=#
 
-J₊(z) = z-√(z-1 |> Complex)*√(z+1 |> Complex) #inverse Joukowsky map
+#J₊(z) = z-√(z-1 |> Complex)*√(z+1 |> Complex) #inverse Joukowsky map
 
 function ChebyVIntExact(z,N::Int,a::Float64,b::Float64)
     C = zeros(ComplexF64,1,N+1)

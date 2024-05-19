@@ -454,20 +454,20 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
 			for k = 1:j-1
 				aa = abs(gW(bands[j,1],bands[j,2])(bands[k,2]))
 				jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,2])))
-				val = ceil(log(jj,tols[2]/aa)) |> Int
+				val = ceil(log(jj,tols[2]/aa)) 
 				if val < 0
 					val = 0
 				end
-				nv[j,k] = min(max(val,K),max_pts)
+				nv[j,k] = min(max(val,K),max_pts) |> Int
 			end
 			for k = j+1:2g
 				aa = abs(gW(bands[j,1],bands[j,2])(bands[k,1]))
 				jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,1])))
-				val = ceil(log(jj,tols[2]/aa)) |> Int
+				val = ceil(log(jj,tols[2]/aa))
 				if val < 0
 					val = 0
 				end
-				nv[j,k] = min(max(val,K),max_pts)
+				nv[j,k] = min(max(val,K),max_pts) |> Int
 			end
 			nv[j,j] = maximum(nv[j,:])
 		end
@@ -475,20 +475,20 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
 			for k = 1:j-1
 				aa = abs(gV(bands[j,1],bands[j,2])(bands[k,2]))
 				jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,2])))
-				val = ceil(log(jj,tols[2]/aa)) |> Int
+				val = ceil(log(jj,tols[2]/aa))
 				if val < 0
 					val = 0
 				end
-				nv[j,k] = min(max(val,K),max_pts)
+				nv[j,k] = min(max(val,K),max_pts) |> Int
 			end
 			for k = j+1:2g
 				aa = abs(gV(bands[j,1],bands[j,2])(bands[k,1]))
 				jj = abs(J₊(iM(bands[j,1],bands[j,2])(bands[k,1])))
-				val = ceil(log(jj,tols[2]/aa)) |> Int
+				val = ceil(log(jj,tols[2]/aa))
 				if val < 0
 					val = 0
 				end
-				nv[j,k] = min(max(val,K),max_pts)
+				nv[j,k] = min(max(val,K),max_pts) |> Int
 			end
 			nv[j,j] = maximum(nv[j,:])
 		end

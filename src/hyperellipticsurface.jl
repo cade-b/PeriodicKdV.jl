@@ -466,6 +466,8 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
 				val = ceil(log(jj,tols[2]/aa))
 				if val < 0
 					val = 0
+				elseif val == NaN
+					val = Inf
 				end
 				nv[j,k] = min(max(val,K),max_pts) |> Int
 			end
@@ -478,6 +480,8 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
 				val = ceil(log(jj,tols[2]/aa))
 				if val < 0
 					val = 0
+				elseif val == NaN
+					val = Inf
 				end
 				nv[j,k] = min(max(val,K),max_pts) |> Int
 			end
@@ -487,6 +491,8 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
 				val = ceil(log(jj,tols[2]/aa))
 				if val < 0
 					val = 0
+				elseif val == NaN
+					val = Inf
 				end
 				nv[j,k] = min(max(val,K),max_pts) |> Int
 			end

@@ -79,7 +79,10 @@ function HyperellipticSurface(gaps,zs,α1,m=50;cycleflag = false)
     function γ(z)
         out = -1im/sqrt(-z |> Complex)
         for i = 1:size(gaps)[1]
-            out *= r(z - gaps[i,1], z - gaps[i,2])
+            val = r(z - gaps[i,1], z - gaps[i,2])
+				if isa(val, Number)
+            		out *= val
+				end
         end
         if imag(z) >= 0.0
             return out
@@ -92,7 +95,10 @@ function HyperellipticSurface(gaps,zs,α1,m=50;cycleflag = false)
         out = -1im/sqrt(-z |> Complex)
         for i = 1:size(gaps)[1]
 			if i != j
-            	out *= r(z - gaps[i,1], z - gaps[i,2])
+				val = r(z - gaps[i,1], z - gaps[i,2])
+				if isa(val, Number)
+            		out *= val
+				end
 			end
         end
         if imag(z) >= 0.0

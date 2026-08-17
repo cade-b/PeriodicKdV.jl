@@ -343,7 +343,6 @@ struct BakerAkhiezerFunction
     α1
 	nmat::Array{Int64}
 	gridmat::Array{Vector{ComplexF64}}
-    fftmat::Array{FFTW.r2rFFTWPlan}
     tol
     iter
 end
@@ -506,14 +505,11 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
 		end
 
 		gridmat = Array{Vector{ComplexF64}}(undef,2g) #store collocation points
-		fftmat = Array{FFTW.r2rFFTWPlan}(undef,2g,2)
 		for j = 1:2g
 			gridmat[j] = M(bands[j,1],bands[j,2]).(Ugrid(nv[j,j])) .|> Complex
-			fftmat[j,1] = FFTW.plan_r2r(zeros(ComplexF64,nv[j,j]),FFTW.REDFT11)
-			fftmat[j,2] = FFTW.plan_r2r(zeros(ComplexF64,nv[j,j]),FFTW.RODFT11)
 		end
 
-		return BakerAkhiezerFunction(bands,Ω,S.E[1],F,S.α1,nv,gridmat,fftmat,tols[1],iter)
+		return BakerAkhiezerFunction(bands,Ω,S.E[1],F,S.α1,nv,gridmat,tols[1],iter)
 	end
 
 	if method == "old"
@@ -571,13 +567,10 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Array;tols = [2*1e-14,
 		nv = kron(ns,ones(1,length(ns)))
 		g = size(zgaps_neg,1)
 		gridmat = Array{Vector{ComplexF64}}(undef,2g) #store collocation points
-		fftmat = Array{FFTW.r2rFFTWPlan}(undef,2g,2)
 		for j = 1:2g
 			gridmat[j] = M(bands[j,1],bands[j,2]).(Ugrid(ns[j])) .|> Complex
-			fftmat[j,1] = FFTW.plan_r2r(zeros(ComplexF64,ns[j]),FFTW.REDFT11)
-			fftmat[j,2] = FFTW.plan_r2r(zeros(ComplexF64,ns[j]),FFTW.RODFT11)
 		end
-		return BakerAkhiezerFunction(bands,Ω,S.E[1],F,S.α1,nv,gridmat,fftmat,tols[1],iter)
+		return BakerAkhiezerFunction(bands,Ω,S.E[1],F,S.α1,nv,gridmat,tols[1],iter)
 	end
 
 	if method == "old"

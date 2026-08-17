@@ -182,7 +182,12 @@ function A_map(x,Ωs::Vector{ComplexF64},bands::Array{Float64,2},nvec::Vector{In
     v
 end
 
-function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::Vector{ComplexF64}, gridmat::Array{Vector{ComplexF64}}, fftmat::Array{FFTW.r2rFFTWPlan}; nmat = Nothing, typevec = Nothing, use_deriv = false, tol = 1e-12, iter = 100)
+function solve_many_int(bands::Array{Float64,2}, Ωs::Vector{ComplexF64}, Ωsx::Vector{ComplexF64}, gridmat::Array{Vector{ComplexF64}}; nmat = Nothing, typevec = Nothing, use_deriv = false, tol = 1e-12, iter = 100)
+    fftmat = Array{FFTW.r2rFFTWPlan}(undef,length(gridmat),2)
+    for j = 1:length(gridmat)
+        fftmat[j,1] = FFTW.plan_r2r(zeros(ComplexF64,length(gridmat[j])),FFTW.REDFT11)
+        fftmat[j,2] = FFTW.plan_r2r(zeros(ComplexF64,length(gridmat[j])),FFTW.RODFT11)
+    end
     g = size(bands,1)-1
     if nmat == Nothing
         nmat = 20*ones(Int,g+1,g+1)
@@ -271,7 +276,7 @@ function solve_rhp(x, t, BA::BakerAkhiezerFunction; deriv = false, tol = BA.tol)
     Ωp = BA.Ω(1.0,0) - BA.Ω(0.0,0)
     Ωsx = [-im*reverse(Ωp); im*Ωp];
 
-    solve_many_int(BA.bands, Ωs, Ωsx, BA.gridmat, BA.fftmat; nmat = BA.nmat, use_deriv = deriv, tol = tol, iter = BA.iter)
+    solve_many_int(BA.bands, Ωs, Ωsx, BA.gridmat; nmat = BA.nmat, use_deriv = deriv, tol = tol, iter = BA.iter)
 end
 
 function (rh::rhsol)(z,flag::Int)

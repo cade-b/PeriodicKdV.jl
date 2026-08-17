@@ -1,8 +1,3 @@
-M = (a,b) ->  (x -> (b-a)/2*(x .+ (b+a)/(b-a)))
-iM = (a,b) -> (x -> 2/(b-a)*(x .- (b+a)/2))
-
-Ugrid = n -> cos.( (2*(1:n) .- 1)/(2*n) * pi)
-
 #=struct ChebyParams
     a::Float64
     b::Float64

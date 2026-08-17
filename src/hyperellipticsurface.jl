@@ -80,7 +80,7 @@ function HyperellipticSurface(gaps,zs,α1,m=50;cycleflag = false)
         out = -1im/sqrt(-z |> Complex)
         for i = 1:size(gaps)[1]
             val = r(z - gaps[i,1], z - gaps[i,2])
-				if isa(val, Number)
+				if !isnan(val)
             		out *= val
 				end
         end
@@ -96,7 +96,7 @@ function HyperellipticSurface(gaps,zs,α1,m=50;cycleflag = false)
         for i = 1:size(gaps)[1]
 			if i != j
 				val = r(z - gaps[i,1], z - gaps[i,2])
-				if isa(val, Number)
+				if !isnan(val)
             		out *= val
 				end
 			end
@@ -434,8 +434,6 @@ end
 #     return BakerAkhiezerFunction(WIm,WIp,Ω,S.E[1],S.α1,CpBO,CmBO,ns,tols[1],iter)
 # end
 
-M = (a,b) ->  (x -> (b-a)/2*(x .+ (b+a)/(b-a)))
-iM = (a,b) -> (x -> 2/(b-a)*(x .- (b+a)/2))
 J₊(z) = z-√(z-1 |> Complex)*√(z+1 |> Complex) #inverse Joukowsky map
 gV(a,b) = z -> (1/2π)*(-1 + sqrt((z-a)/(z-b) |> Complex))*(2/(b-a))
 gW(a,b) = z -> (1/2π)*(1 - sqrt((z-b)/(z-a) |> Complex))*(2/(b-a))
@@ -471,7 +469,7 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
 				val = ceil(log(jj,tols[2]/aa))
 				if val < 0
 					val = 0
-				elseif val == NaN
+				elseif isnan(val)
 					val = Inf
 				end
 				nv[j,k] = min(max(val,K),max_pts) |> Int
@@ -485,7 +483,7 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
 				val = ceil(log(jj,tols[2]/aa))
 				if val < 0
 					val = 0
-				elseif val == NaN
+				elseif isnan(val)
 					val = Inf
 				end
 				nv[j,k] = min(max(val,K),max_pts) |> Int
@@ -496,7 +494,7 @@ function BakerAkhiezerFunction(S::HyperellipticSurface,c::Float64;tols = [2*1e-1
 				val = ceil(log(jj,tols[2]/aa))
 				if val < 0
 					val = 0
-				elseif val == NaN
+				elseif isnan(val)
 					val = Inf
 				end
 				nv[j,k] = min(max(val,K),max_pts) |> Int
